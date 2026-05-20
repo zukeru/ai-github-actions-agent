@@ -1,0 +1,384 @@
+name: GHA AI Agent Review
+description: Run an AI provider backed PR review when @gha-agent-review is mentioned.
+
+inputs:
+  github-token:
+    description: GitHub token used only by host-side scripts to read PR context and post reviews.
+    required: true
+  pr-number:
+    description: Pull request number to review.
+    required: true
+  repository:
+    description: Repository in owner/name format.
+    required: true
+  aws-region:
+    description: AWS region for Bedrock. Required only when provider is bedrock.
+    required: false
+    default: ""
+  provider:
+    description: Model provider to use. Use auto, bedrock, anthropic, openai, azure-openai, or google.
+    required: false
+    default: auto
+  model-id:
+    description: Model ID, Bedrock inference profile ID, or Azure OpenAI deployment name.
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Anthropic Claude API key. Required when provider is anthropic unless ANTHROPIC_API_KEY is already set.
+    required: false
+    default: ""
+  claude-api-key:
+    description: Claude API key alias for Anthropic. Required when provider is anthropic unless another Anthropic key is set.
+    required: false
+    default: ""
+  openai-api-key:
+    description: OpenAI API key. Required when provider is openai unless OPENAI_API_KEY is already set.
+    required: false
+    default: ""
+  azure-openai-api-key:
+    description: Azure OpenAI API key. Required when provider is azure-openai unless AZURE_OPENAI_API_KEY is already set.
+    required: false
+    default: ""
+  azure-openai-endpoint:
+    description: Azure OpenAI endpoint, such as https://example.openai.azure.com.
+    required: false
+    default: ""
+  azure-openai-api-version:
+    description: Azure OpenAI API version for chat completions.
+    required: false
+    default: "2024-10-21"
+  azure-access-token:
+    description: Azure Resource Manager bearer token used to create or tag the Azure OpenAI account and deployment.
+    required: false
+    default: ""
+  azure-subscription-id:
+    description: Azure subscription ID for Azure OpenAI setup.
+    required: false
+    default: ""
+  azure-resource-group:
+    description: Azure resource group for Azure OpenAI setup.
+    required: false
+    default: ""
+  azure-openai-account-name:
+    description: Azure OpenAI account name to create or tag.
+    required: false
+    default: ""
+  azure-openai-location:
+    description: Azure location used when creating a missing Azure OpenAI account.
+    required: false
+    default: ""
+  azure-openai-account-sku:
+    description: Azure OpenAI account SKU used when creating a missing account.
+    required: false
+    default: "S0"
+  azure-openai-deployment-model-name:
+    description: Azure OpenAI base model name used when creating a missing deployment.
+    required: false
+    default: ""
+  azure-openai-deployment-model-version:
+    description: Azure OpenAI base model version used when creating a missing deployment.
+    required: false
+    default: ""
+  azure-openai-deployment-sku-name:
+    description: Azure OpenAI deployment SKU used when creating a missing deployment.
+    required: false
+    default: "Standard"
+  azure-openai-deployment-capacity:
+    description: Azure OpenAI deployment capacity used when creating a missing deployment.
+    required: false
+    default: "1"
+  google-api-key:
+    description: Google Gemini API key. Required when provider is google unless GOOGLE_API_KEY or GEMINI_API_KEY is already set.
+    required: false
+    default: ""
+  skill-file:
+    description: Path or URL to the review skill file.
+    required: false
+    default: .claude/skill.md
+  rules-file:
+    description: Path or URL to the review rules file.
+    required: false
+    default: .claude/rules.md
+  trigger-phrases:
+    description: Comma-separated phrases that trigger the review.
+    required: false
+    default: "@gha-agent-review,@gha-agent-revew"
+  bedrock-prompt-name:
+    description: Bedrock Prompt Management marker name.
+    required: false
+    default: gha-agent-review
+  max-inline-comments:
+    description: Maximum number of inline review comments to publish.
+    required: false
+    default: "25"
+  auto-fix-enabled:
+    description: Whether safe deterministic findings should open a fix PR from the reviewed branch.
+    required: false
+    default: "true"
+  coverage-warning-threshold:
+    description: Coverage percentage that triggers a non-blocking warning when measurable coverage is lower.
+    required: false
+    default: "90"
+  add-readme-diagrams:
+    description: Whether automatic fix PRs should add a Mermaid README diagram when the target README has none.
+    required: false
+    default: "true"
+  add-architecture-docs:
+    description: Whether automatic fix PRs should add docs/architecture.md when architecture documentation is absent.
+    required: false
+    default: "true"
+  super-skill-enabled:
+    description: Whether to include the bundled Super Skill rule catalog in AI review context.
+    required: false
+    default: "true"
+  super-skill-max-rules:
+    description: Maximum number of relevant Super Skill rules to send to the review agent.
+    required: false
+    default: "120"
+  auto-fix-max-findings:
+    description: Maximum number of safe finding suggestions to apply in one automatic fix PR.
+    required: false
+    default: "25"
+  auto-fix-max-files:
+    description: Maximum number of files changed by safe finding suggestions in one automatic fix PR.
+    required: false
+    default: "10"
+  debug:
+    description: Enables verbose script logging when set to true.
+    required: false
+    default: "false"
+outputs:
+  finding-count:
+    description: Total number of blocking findings and non-blocking warnings.
+    value: ${{ steps.post_review.outputs['finding-count'] }}
+  blocking-finding-count:
+    description: Number of findings that block merge.
+    value: ${{ steps.post_review.outputs['blocking-finding-count'] }}
+  warning-count:
+    description: Number of non-blocking warnings.
+    value: ${{ steps.post_review.outputs['warning-count'] }}
+  fixed-count:
+    description: Number of tracked blockers no longer present.
+    value: ${{ steps.post_review.outputs['fixed-count'] }}
+  requested-count:
+    description: Number of unique tracked blockers across GHA AI Agent Review runs on the PR.
+    value: ${{ steps.post_review.outputs['requested-count'] }}
+  review-state:
+    description: GitHub review state submitted by the action.
+    value: ${{ steps.post_review.outputs['review-state'] }}
+  fix-pr-url:
+    description: URL of the automatic fix PR, when one was created.
+    value: ${{ steps.post_review.outputs['fix-pr-url'] }}
+  fix-branch:
+    description: Branch created for automatic fixes, when one was created.
+    value: ${{ steps.post_review.outputs['fix-branch'] }}
+  auto-fix-count:
+    description: Number of safe finding fixes applied to the automatic fix PR.
+    value: ${{ steps.post_review.outputs['auto-fix-count'] }}
+  diagram-added:
+    description: Whether a README Mermaid diagram was added to the automatic fix PR.
+    value: ${{ steps.post_review.outputs['diagram-added'] }}
+  architecture-doc-added:
+    description: Whether architecture documentation was added to the automatic fix PR.
+    value: ${{ steps.post_review.outputs['architecture-doc-added'] }}
+  bedrock-setup-status:
+    description: Provider setup status. Bedrock, Azure, and Google return found, created, or updated; other direct API providers return preflighted.
+    value: ${{ steps.bootstrap.outputs['bedrock-setup-status'] }}
+  provider-name:
+    description: Model provider selected by the action.
+    value: ${{ steps.bootstrap.outputs['provider-name'] }}
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare runtime
+      id: runtime
+      shell: bash
+      run: |
+        set -euo pipefail
+        runtime_dir="${RUNNER_TEMP:-$PWD/.gha-agent-review-runtime}/gha-agent-review-${{ inputs.pr-number }}-${GITHUB_RUN_ID:-local}"
+        mkdir -p "$runtime_dir"
+        image_tag="gha-agent-review-agent:${GITHUB_RUN_ID:-local}-${{ inputs.pr-number }}"
+        {
+          echo "runtime-dir=$runtime_dir"
+          echo "image-tag=$image_tag"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Validate trigger
+      id: trigger
+      shell: bash
+      env:
+        TRIGGER_PHRASES: ${{ inputs.trigger-phrases }}
+      run: |
+        set -euo pipefail
+        python "$GITHUB_ACTION_PATH/scripts/trigger_check.py" \
+          --trigger-phrases "$TRIGGER_PHRASES"
+
+    - name: Collect pull request context
+      if: steps.trigger.outputs.should-run == 'true'
+      id: collect_context
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        python "$GITHUB_ACTION_PATH/scripts/collect_pr_context.py" \
+          --repository "${{ inputs.repository }}" \
+          --pr-number "${{ inputs.pr-number }}" \
+          --skill-file "${{ inputs.skill-file }}" \
+          --rules-file "${{ inputs.rules-file }}" \
+          --super-skill-enabled "${{ inputs.super-skill-enabled }}" \
+          --super-skill-max-rules "${{ inputs.super-skill-max-rules }}" \
+          --output "${{ steps.runtime.outputs.runtime-dir }}/context.json"
+
+    - name: Build review agent image
+      if: steps.trigger.outputs.should-run == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker build \
+          -t "${{ steps.runtime.outputs.image-tag }}" \
+          "$GITHUB_ACTION_PATH/docker"
+
+    - name: Bootstrap provider
+      if: steps.trigger.outputs.should-run == 'true'
+      id: bootstrap
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        CLAUDE_API_KEY: ${{ inputs.claude-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure-openai-api-key }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure-openai-endpoint }}
+        AZURE_OPENAI_API_VERSION: ${{ inputs.azure-openai-api-version }}
+        AZURE_ACCESS_TOKEN: ${{ inputs.azure-access-token }}
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
+        AZURE_RESOURCE_GROUP: ${{ inputs.azure-resource-group }}
+        AZURE_OPENAI_ACCOUNT_NAME: ${{ inputs.azure-openai-account-name }}
+        AZURE_OPENAI_LOCATION: ${{ inputs.azure-openai-location }}
+        AZURE_OPENAI_ACCOUNT_SKU: ${{ inputs.azure-openai-account-sku }}
+        AZURE_OPENAI_DEPLOYMENT_MODEL_NAME: ${{ inputs.azure-openai-deployment-model-name }}
+        AZURE_OPENAI_DEPLOYMENT_MODEL_VERSION: ${{ inputs.azure-openai-deployment-model-version }}
+        AZURE_OPENAI_DEPLOYMENT_SKU_NAME: ${{ inputs.azure-openai-deployment-sku-name }}
+        GOOGLE_API_KEY: ${{ inputs.google-api-key }}
+      run: |
+        set -euo pipefail
+        docker run --rm \
+          -e AWS_ACCESS_KEY_ID \
+          -e AWS_SECRET_ACCESS_KEY \
+          -e AWS_SESSION_TOKEN \
+          -e AWS_REGION \
+          -e AWS_DEFAULT_REGION \
+          -e ANTHROPIC_API_KEY \
+          -e CLAUDE_API_KEY \
+          -e OPENAI_API_KEY \
+          -e AZURE_OPENAI_API_KEY \
+          -e AZURE_OPENAI_ENDPOINT \
+          -e AZURE_OPENAI_API_VERSION \
+          -e AZURE_ACCESS_TOKEN \
+          -e AZURE_SUBSCRIPTION_ID \
+          -e AZURE_RESOURCE_GROUP \
+          -e AZURE_OPENAI_ACCOUNT_NAME \
+          -e AZURE_OPENAI_LOCATION \
+          -e AZURE_OPENAI_ACCOUNT_SKU \
+          -e AZURE_OPENAI_DEPLOYMENT_MODEL_NAME \
+          -e AZURE_OPENAI_DEPLOYMENT_MODEL_VERSION \
+          -e AZURE_OPENAI_DEPLOYMENT_SKU_NAME \
+          -e GOOGLE_API_KEY \
+          -v "${{ steps.runtime.outputs.runtime-dir }}:/runtime" \
+          "${{ steps.runtime.outputs.image-tag }}" \
+          python -m gha_agent_review_agent.bootstrap \
+            --aws-region "${{ inputs.aws-region }}" \
+            --model-id "${{ inputs.model-id }}" \
+            --provider "${{ inputs.provider }}" \
+            --azure-openai-endpoint "${{ inputs.azure-openai-endpoint }}" \
+            --azure-openai-api-version "${{ inputs.azure-openai-api-version }}" \
+            --azure-access-token "${{ inputs.azure-access-token }}" \
+            --azure-subscription-id "${{ inputs.azure-subscription-id }}" \
+            --azure-resource-group "${{ inputs.azure-resource-group }}" \
+            --azure-openai-account-name "${{ inputs.azure-openai-account-name }}" \
+            --azure-openai-location "${{ inputs.azure-openai-location }}" \
+            --azure-openai-account-sku "${{ inputs.azure-openai-account-sku }}" \
+            --azure-openai-deployment-model-name "${{ inputs.azure-openai-deployment-model-name }}" \
+            --azure-openai-deployment-model-version "${{ inputs.azure-openai-deployment-model-version }}" \
+            --azure-openai-deployment-sku-name "${{ inputs.azure-openai-deployment-sku-name }}" \
+            --azure-openai-deployment-capacity "${{ inputs.azure-openai-deployment-capacity }}" \
+            --prompt-name "${{ inputs.bedrock-prompt-name }}" \
+            --output /runtime/bedrock.json \
+            --env-output /runtime/provider.env
+        status="$(python "$GITHUB_ACTION_PATH/scripts/read_json_field.py" "${{ steps.runtime.outputs.runtime-dir }}/bedrock.json" status)"
+        provider="$(python "$GITHUB_ACTION_PATH/scripts/read_json_field.py" "${{ steps.runtime.outputs.runtime-dir }}/bedrock.json" provider)"
+        echo "bedrock-setup-status=$status" >> "$GITHUB_OUTPUT"
+        echo "provider-name=$provider" >> "$GITHUB_OUTPUT"
+
+    - name: Run AI review agent
+      if: steps.trigger.outputs.should-run == 'true'
+      id: review_agent
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        CLAUDE_API_KEY: ${{ inputs.claude-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure-openai-api-key }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure-openai-endpoint }}
+        AZURE_OPENAI_API_VERSION: ${{ inputs.azure-openai-api-version }}
+        GOOGLE_API_KEY: ${{ inputs.google-api-key }}
+      run: |
+        set -euo pipefail
+        env_file="${{ steps.runtime.outputs.runtime-dir }}/provider.env"
+        env_file_args=()
+        if [ -f "$env_file" ]; then
+          env_file_args=(--env-file "$env_file")
+        fi
+        docker run --rm \
+          "${env_file_args[@]}" \
+          -e AWS_ACCESS_KEY_ID \
+          -e AWS_SECRET_ACCESS_KEY \
+          -e AWS_SESSION_TOKEN \
+          -e AWS_REGION \
+          -e AWS_DEFAULT_REGION \
+          -e ANTHROPIC_API_KEY \
+          -e CLAUDE_API_KEY \
+          -e OPENAI_API_KEY \
+          -e GOOGLE_API_KEY \
+          -v "${{ steps.runtime.outputs.runtime-dir }}:/runtime" \
+          "${{ steps.runtime.outputs.image-tag }}" \
+          python -m gha_agent_review_agent.review_agent \
+            --context /runtime/context.json \
+            --model-id "${{ inputs.model-id }}" \
+            --aws-region "${{ inputs.aws-region }}" \
+            --provider "${{ inputs.provider }}" \
+            --azure-openai-endpoint "${{ inputs.azure-openai-endpoint }}" \
+            --azure-openai-api-version "${{ inputs.azure-openai-api-version }}" \
+            --output /runtime/review_result.json
+
+    - name: Post pull request review
+      if: steps.trigger.outputs.should-run == 'true'
+      id: post_review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        python "$GITHUB_ACTION_PATH/scripts/post_review.py" \
+          --repository "${{ inputs.repository }}" \
+          --pr-number "${{ inputs.pr-number }}" \
+          --context "${{ steps.runtime.outputs.runtime-dir }}/context.json" \
+          --result "${{ steps.runtime.outputs.runtime-dir }}/review_result.json" \
+          --max-inline-comments "${{ inputs.max-inline-comments }}" \
+          --auto-fix-enabled "${{ inputs.auto-fix-enabled }}" \
+          --coverage-warning-threshold "${{ inputs.coverage-warning-threshold }}" \
+          --add-readme-diagrams "${{ inputs.add-readme-diagrams }}" \
+          --add-architecture-docs "${{ inputs.add-architecture-docs }}" \
+          --auto-fix-max-findings "${{ inputs.auto-fix-max-findings }}" \
+          --auto-fix-max-files "${{ inputs.auto-fix-max-files }}"

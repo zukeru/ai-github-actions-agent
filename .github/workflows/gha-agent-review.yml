@@ -1,0 +1,86 @@
+name: GHA AI Agent Review
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  gha-agent-review:
+    name: GHA AI Agent Review
+    if: >-
+      github.event.issue.pull_request &&
+      (contains(github.event.comment.body, '@gha-agent-review') ||
+       contains(github.event.comment.body, '@gha-agent-revew'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "CHECKOUT:REPO"
+        uses: actions/checkout@v4
+
+      - name: "UTILITY:SETUP:PYTHON"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "ENV:LOAD:CONFIG"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+
+          with open(".github/workflows/configuration/gha-agent-reviewer.json", "r", encoding="utf-8") as config_file:
+              config = json.load(config_file)
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              for key, value in config.items():
+                  env_file.write(f"{key}={value}\n")
+          PY
+
+      - name: "AWS:AUTH"
+        if: env.GHA_AI_AGENT_PROVIDER == 'bedrock'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: "${{ secrets.GHA_AI_AGENT_AWS_ACCESS_KEY_ID }}"
+          aws-secret-access-key: "${{ secrets.GHA_AI_AGENT_AWS_SECRET_ACCESS_KEY }}"
+          aws-region: "${{ env.AWS_REGION }}"
+
+      - name: "GHA_AI_AGENT:REVIEW"
+        uses: ./.github/actions/gha-agent-review
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN_NOT_OEPNER || secrets.GHA_AI_AGENT_GIT_TOKEN }}"
+          pr-number: "${{ github.event.issue.number }}"
+          repository: "${{ github.repository }}"
+          aws-region: "${{ env.AWS_REGION }}"
+          provider: "${{ env.GHA_AI_AGENT_PROVIDER }}"
+          model-id: "${{ env.GHA_AI_AGENT_MODEL_ID }}"
+          anthropic-api-key: "${{ secrets.GHA_AI_AGENT_ANTHROPIC_API_KEY }}"
+          claude-api-key: "${{ secrets.GHA_AI_AGENT_CLAUDE_API_KEY }}"
+          openai-api-key: "${{ secrets.GHA_AI_AGENT_OPENAI_API_KEY }}"
+          azure-openai-api-key: "${{ secrets.GHA_AI_AGENT_AZURE_OPENAI_API_KEY }}"
+          azure-openai-endpoint: "${{ secrets.GHA_AI_AGENT_AZURE_OPENAI_ENDPOINT }}"
+          azure-openai-api-version: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_API_VERSION }}"
+          azure-access-token: "${{ secrets.GHA_AI_AGENT_AZURE_ACCESS_TOKEN }}"
+          azure-subscription-id: "${{ env.GHA_AI_AGENT_AZURE_SUBSCRIPTION_ID }}"
+          azure-resource-group: "${{ env.GHA_AI_AGENT_AZURE_RESOURCE_GROUP }}"
+          azure-openai-account-name: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_ACCOUNT_NAME }}"
+          azure-openai-location: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_LOCATION }}"
+          azure-openai-account-sku: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_ACCOUNT_SKU }}"
+          azure-openai-deployment-model-name: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_DEPLOYMENT_MODEL_NAME }}"
+          azure-openai-deployment-model-version: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_DEPLOYMENT_MODEL_VERSION }}"
+          azure-openai-deployment-sku-name: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_DEPLOYMENT_SKU_NAME }}"
+          azure-openai-deployment-capacity: "${{ env.GHA_AI_AGENT_AZURE_OPENAI_DEPLOYMENT_CAPACITY }}"
+          google-api-key: "${{ secrets.GHA_AI_AGENT_GOOGLE_API_KEY }}"
+          skill-file: ".claude/skill.md"
+          rules-file: ".claude/rules.md"
+          trigger-phrases: "@gha-agent-review,@gha-agent-revew"
+          bedrock-prompt-name: "gha-agent-review"
+          max-inline-comments: "25"
+          debug: "${{ env.DEBUG }}"

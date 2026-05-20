@@ -1,0 +1,11 @@
+.gha-agent-review-runtime/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+test-results.xml
+coverage.xml
+.DS_Store
